@@ -6,8 +6,9 @@ Este projeto é um bot automatizado que interage com um jogo de musiquinha. O bo
 
 Antes de executar o programa, você precisa ter:
 
-- Python 3.x instalado.
-- MySQL Server instalado e em execução.
+- **Python 3.x** instalado.
+- **MySQL Server** instalado e em execução.
+- **Git** instalado (para clonar o repositório).
 
 ## Instalação
 ### 1. **Clone o repositório:**
