@@ -1,0 +1,4 @@
+LOGIN=example
+PASSWORD=example123
+
+DB_PASSWORD=root_password_example
