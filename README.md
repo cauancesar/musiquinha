@@ -9,6 +9,7 @@ Antes de executar o programa, você precisa ter:
 - **Python 3.x** instalado.
 - **MySQL Server** instalado e em execução.
 - **Git** instalado (para clonar o repositório).
+- **Browser Driver para o Selenium** leia a documentação do [selenium](https://selenium-python.readthedocs.io/installation.html#drivers) para mais detalhes.
 
 ## Instalação
 ### 1. **Clone o repositório:**
