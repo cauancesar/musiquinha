@@ -33,7 +33,9 @@ VERBOSE = True  # whether to be verbose or not
 HEADLESS, MUTED = False, False  # whether to run headless or muted
     
 index_dict = 0
+answer_index = 0
 is_busy = False
+answered = False
 pending_answers = queue.Queue()
 
 if not USER or not PASS:
@@ -152,14 +154,19 @@ def capture_payloads(driver, payload_queue, stop_event):
 def process_payloads(payload_queue, driver, stop_event):
     """Processes the payloads in the queue."""
     anime_dict = {}
-    global index_dict, is_busy
-    id_order = {}
+    global index_dict, is_busy, answer_index, answered
+    anime_order = {}
+    
     while not stop_event.is_set():
         try:
             if is_start_button_clickable(driver):
                 print("Restarting game...")
+                anime_dict = {}
+                anime_order = {}
+                index_dict = 0
+                answer_index = 0
 
-            payload = payload_queue.get(timeout=1)
+            payload = payload_queue.get(timeout=5)
             payload_json = process_payload(payload)
             if isinstance(payload_json, list) and payload_json[0] == "command":
                 command_data = payload_json[1]
@@ -167,34 +174,33 @@ def process_payloads(payload_queue, driver, stop_event):
                 if command_data["command"] == "quiz next video info":
                     video_info = command_data["data"]["videoInfo"]["videoMap"]["catbox"]
                     anime_html_ids = [video_info.get("0"), video_info.get("720"), video_info.get("480")]
-                    id_order[index_dict] = anime_html_ids
+                    anime_order[index_dict] = anime_html_ids
 
-                    first_index = next(iter(id_order))
-                    first_anime_ids = id_order[first_index]
+                    if answer_index in anime_order:
+                        anime_name = db.find_anime_by_id(anime_order[answer_index])
 
-                    anime_name = db.find_anime_by_id(first_anime_ids)
+                        if anime_name:
+                            answered = True
+                            del anime_order[answer_index]
+                            if not is_busy:
+                                is_busy = True
+                                answer(driver, anime_name)
+                            else:
+                                pending_answers.put(anime_name)
 
-                    if anime_name:
-                        time.sleep(4)
-                        del id_order[first_index]
-
-                        if not is_busy:
-                            is_busy = True
-                            answer(driver, anime_name)
-                        else:
-                            pending_answers.put(anime_name)
-
-                    else:
-                        print("Anime not found yet.")
-                        index_dict += 1
+                    index_dict += 1
                     
                 elif command_data["command"] == "answer results":
-                    process_answer_results(command_data, id_order)
+                    if not answered:
+                        process_answer_results(command_data, anime_order)
+                    
+                    answered = False
+                    answer_index += 1
                     
         except queue.Empty:
             continue
 
-def process_answer_results(command_data, id_order):
+def process_answer_results(command_data, anime_order):
     """Processes the 'answer results' command."""
     try:
         song_info = command_data['data']['songInfo']
@@ -202,13 +208,15 @@ def process_answer_results(command_data, id_order):
         anime_names = song_info['animeNames']
         anime_name_english = anime_names.get('english')
 
-        for idx, ids in id_order.items():
+        print("\nAnime not found yet.")
+
+        for idx, ids in anime_order.items():
             if (catbox.get("0") in ids or 
                 catbox.get("720") in ids or 
                 catbox.get("480") in ids):
 
                 db.save_anime(ids, anime_name_english)
-                del id_order[idx]
+                del anime_order[idx]
                 break
 
     except Exception as e:
@@ -220,7 +228,6 @@ def monitor_network(driver: webdriver.Chrome):
     threading.Thread(target=capture_payloads, args=(driver, payload_queue)).start()
     threading.Thread(target=process_next_answer, args=(driver,)).start()
     process_payloads(payload_queue, driver)
-    print("teste")
 
 
 def process_next_answer(driver, stop_event):
@@ -245,11 +252,10 @@ def answer(driver: webdriver.Chrome, ans: str) -> None:
         )
         box.send_keys(ans)
         box.send_keys(Keys.RETURN)
-
-        time.sleep(15)
     
     except TimeoutException:
         print("Timeout: the element did not become interactable in time.")
+        answer(driver, ans)
     
     except ElementNotInteractableException:
         print("Error: element found, but not interactable at the moment.")
