@@ -18,32 +18,24 @@ def create_connection():
     except Error as e:
         print(f"Error connecting to MySQL: {e}")
 
-def check_database():
+def create_database():
     db_name = "anime_db"
     conn = create_connection()
-
     cursor = conn.cursor()
-    cursor.execute("SHOW DATABASES")
 
+    cursor.execute("SHOW DATABASES")
     databases = cursor.fetchall()
     for database in databases:
         if database[0] == db_name:
             print(f"Database '{db_name}' exists.")
-            cursor.close()
-            conn.close()
-            return True
-    
-    cursor.close()
-    conn.close()
-    return False
+            cursor.execute(f"USE {db_name}")
+            break
 
-def create_database():
-    conn = create_connection()
-    cursor = conn.cursor()
+    else:
+        cursor.execute(f"CREATE DATABASE {db_name}")
+        print(f"Database '{db_name}' created.")
+        cursor.execute(f"USE {db_name}")
 
-    cursor.execute("CREATE DATABASE IF NOT EXISTS anime_db")
-
-    cursor.execute("USE anime_db")
 
     cursor.execute(
         """
@@ -138,7 +130,7 @@ def save_anime(anime_html_ids, anime_name):
 
         conn.commit()
         print("Saved successfully!")
-        print("Anime:", anime_name, "\nIDs:", anime_html_ids)
+        print("Anime:", anime_name, " IDs:", anime_html_ids)
 
     except Exception as e:
         print(f"Error saving name or IDs to the database: {e}")
