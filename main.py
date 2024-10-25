@@ -15,8 +15,7 @@ if __name__ == "__main__":
     driver = None
     threads = []
     try:
-        if db.check_database() == False:
-            db.create_database()
+        db.create_database()
 
         user_input = input("Fazer login automaticamente? (Y/N) ")
         if user_input.lower() == "y":
