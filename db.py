@@ -87,7 +87,7 @@ def find_anime_by_id(anime_html_ids):
             result = cursor.fetchone()
             if result:
                 anime_name = result[0]
-                print(f"Found anime: {anime_name} for ID: {anime_html_id}")
+                print(f"\nFound anime: {anime_name} for ID: {anime_html_id}\n")
                 return anime_name
             else:
                 return
@@ -123,11 +123,12 @@ def save_anime(anime_html_ids, anime_name):
     try:
         anime_id = find_anime_by_name(anime_name)
         if not anime_id:
-            print("\nSaving anime:", anime_name)
+            print("Saving new anime:", anime_name)
             cursor.execute("INSERT INTO animes (nome) VALUES (%s)", (anime_name,))
             anime_id = cursor.lastrowid
             print(f"Anime '{anime_name}' saved with ID: {anime_id}")
 
+        print("Saving anime ids...")
         for anime_html_id in anime_html_ids:
             if anime_html_id:
                 cursor.execute(
@@ -136,7 +137,8 @@ def save_anime(anime_html_ids, anime_name):
                 )
 
         conn.commit()
-        print("Saved successfully!\n")
+        print("Saved successfully!")
+        print("Anime:", anime_name, "\nIDs:", anime_html_ids)
 
     except Exception as e:
         print(f"Error saving name or IDs to the database: {e}")
