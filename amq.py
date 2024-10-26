@@ -41,6 +41,7 @@ index_dict = 0 # Counter for tracking order
 answer_index = 0 # Index of current answer
 is_busy = False # Flag to control answer processing
 answered = False # Flag to indicate if answer has been processed
+reconnecting = False
 anime_order = {} # Order mapping of anime for processing
 pending_answers = queue.Queue() # Queue for pending answers
 
@@ -99,15 +100,16 @@ def enter_game(
     driver: webdriver.Chrome
 ) -> None:
     """Enters a game from the home page."""
+    global reconnecting
     try:
         # Attempt to rejoin an existing game if button is available
         rejoin_button = WebDriverWait(driver, 2).until(
         EC.presence_of_element_located((By.XPATH, "//button[text()='Rejoin']"))
         )
-        if rejoin_button:
-            print("Joining an existing game...")
-            driver.find_element(By.XPATH, "//button[text()='Rejoin']").click()
-            time.sleep(5)
+        print("Joining an existing game...")
+        rejoin_button.click()
+        reconnecting = True
+        time.sleep(5)
 
     except TimeoutException:
         print("Creating a new game...")
@@ -141,8 +143,8 @@ def enter_game(
         except Exception as e:
             print("Error creating a new game. Proceed manually.")
     
-    except Exception:
-        print("Error joining or creating a game. Proceed manually.")
+    except Exception as e:
+        print("Error joining or creating a game. Proceed manually.", e)
 
 def process_payload(
     payload: Union[dict, list]
@@ -196,10 +198,14 @@ def process_payloads(
     stop_event: Event
 ) -> None:
     """Processes the payloads in the queue."""
-    global index_dict, is_busy, answer_index, answered, anime_order
+    global index_dict, is_busy, answer_index, answered, anime_order, reconnecting
     
     while not stop_event.is_set():
         try:
+            if reconnecting:
+                simulate_payload_cycle(payload_queue)
+                reconnecting = False
+
             # Check if the start button is clickable to restart game
             if is_start_button_clickable(driver):
                 print("Restarting game...")
@@ -214,7 +220,6 @@ def process_payloads(
                 elif command_data["command"] == "answer results":
                     if not answered:
                         process_answer_results(command_data, anime_order)
-                    
                     answered = False
                     answer_index += 1
 
@@ -240,27 +245,31 @@ def process_quiz_next_video_info(
 
     try:
         # Extract anime video information and update order
-        video_info = command_data["data"]["videoInfo"]["videoMap"]["catbox"]
-        anime_html_id = video_info.get("0")
-        anime_order[index_dict] = anime_html_id
+        video_info = command_data["data"]["videoInfo"]
+        video_map = video_info["videoMap"]
 
-        # Look up and answer if anime is identified
-        if answer_index in anime_order:
-            anime_name = db.find_anime_by_id(anime_order[answer_index])
+        if 'catbox' in video_map:
+            anime_html_id = video_map['catbox'].get('0')
+            anime_order[index_dict] = anime_html_id
 
-            if anime_name:
-                answered = True
-                del anime_order[answer_index]
-                if not is_busy:
-                    is_busy = True
-                    answer(driver, anime_name)
-                else:
-                    pending_answers.put(anime_name)
+            # Look up and answer if anime is identified
+            if answer_index in anime_order:
+                anime_name = db.find_anime_by_id(anime_order[answer_index])
 
-        index_dict += 1
+                if anime_name:
+                    answered = True
+                    del anime_order[answer_index]
+                    if not is_busy:
+                        is_busy = True
+                        answer(driver, anime_name)
+                    else:
+                        pending_answers.put(anime_name)
         
     except Exception as e:
         print(f"Error processing 'quiz next video info': {e}")
+
+    finally:
+        index_dict += 1
 
 def process_answer_results(
     command_data: Union[dict, list], 
@@ -269,19 +278,21 @@ def process_answer_results(
     """Processes the 'answer results' command."""
     try:
         # Extract song and anime details from answer results
-        song_info = command_data['data']['songInfo']
-        catbox = song_info['videoTargetMap']['catbox']
-        anime_names = song_info['animeNames']
-        anime_name_english = anime_names.get('english')
+         if "data" in command_data and "songInfo" in command_data["data"]:
+            song_info = command_data['data']['songInfo']
+            if "videoTargetMap" in song_info and "catbox" in song_info["videoTargetMap"]:
+                catbox = song_info['videoTargetMap']['catbox']
+                anime_names = song_info['animeNames']
+                anime_name_english = anime_names.get('english')
+            
+                print("\nAnime not found yet.")
 
-        print("\nAnime not found yet.")
-
-        # Update database with correct anime details
-        for idx, anime_html_id in anime_order.items():
-            if catbox.get("0") == anime_html_id:
-                db.save_anime(anime_html_id, anime_name_english)
-                del anime_order[idx]
-                break
+                # Update database with correct anime details
+                for idx, anime_html_id in anime_order.items():
+                    if catbox.get("0") == anime_html_id:
+                        db.save_anime(anime_html_id, anime_name_english)
+                        del anime_order[idx]
+                        break
 
     except Exception as e:
         print(f"Error processing 'answer results': {e}")
@@ -359,3 +370,19 @@ def reset_game_state() -> None:
     anime_order.clear()
     while not pending_answers.empty(): # Clear pending answers queue
         pending_answers.get()
+
+def simulate_payload_cycle(
+    payload_queue: Queue
+) -> None:
+    """Simulates a payload to synchronize the cycle after reconnecting."""
+    # Insert a simulated payload into the queue to correct the flow
+    simulated_payload = {
+        "command": "quiz next video info",
+        "data": {
+            "videoInfo": {
+                "videoMap": {"catbox": {"0": "exampleAnimeId"}} # Fictitious ID
+            }
+        }
+    }
+    payload_queue.put(simulated_payload)
+    print("Simulated payload added to queue to maintain the cycle.\n")
