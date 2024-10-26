@@ -36,16 +36,13 @@ index_dict = 0
 answer_index = 0
 is_busy = False
 answered = False
+anime_dict = {}
+anime_order = {}
 pending_answers = queue.Queue()
 
 if not USER or not PASS:
     # Prompt for information if environment variables are not set
     USER, PASS = input("Username: "), getpass.getpass()
-
-
-def find_by_text(driver: webdriver.Chrome, text: str):
-    """Finds an element by text."""
-    return driver.find_elements(By.XPATH, f"//*[contains(text(), '{text}')]")
 
 def get_driver() -> webdriver.Chrome:
     """Returns a Chrome driver with the specified options."""
@@ -143,52 +140,41 @@ def capture_payloads(driver, payload_queue, stop_event):
             logs = driver.get_log('performance')
             for log in logs:
                 log_data = json.loads(log["message"])
+
                 if log_data.get("message", {}).get("method") == "Network.webSocketFrameReceived":
                     payload = log_data["message"]["params"]["response"]["payloadData"]
-                    payload_queue.put(payload)  # Adiciona o payload diretamente à fila
-            time.sleep(0.5)
-            
+                    payload_json = process_payload(payload)
+
+                    if isinstance(payload_json, list) and payload_json[0] == "command":
+                        command_data = payload_json[1]
+                        relevant_commands = ["quiz next video info", "answer results"]
+
+                        if command_data["command"] in relevant_commands:
+                            payload_queue.put(command_data)
+
+            time.sleep(0.1)
+        except json.JSONDecodeError as e:
+            print(f"JSON decode error: {e}")
+            time.sleep(0.1)
+
         except Exception as e:
             print(f"Error capturing logs: {e}")
+            time.sleep(0.1)
 
 def process_payloads(payload_queue, driver, stop_event):
     """Processes the payloads in the queue."""
-    anime_dict = {}
-    global index_dict, is_busy, answer_index, answered
-    anime_order = {}
+    global index_dict, is_busy, answer_index, answered, anime_dict, anime_order
     
     while not stop_event.is_set():
         try:
             if is_start_button_clickable(driver):
                 print("Restarting game...")
-                anime_dict = {}
-                anime_order = {}
-                index_dict = 0
-                answer_index = 0
 
-            payload = payload_queue.get(timeout=5)
-            payload_json = process_payload(payload)
-            if isinstance(payload_json, list) and payload_json[0] == "command":
-                command_data = payload_json[1]
+            if not payload_queue.empty():
+                command_data = payload_queue.get(timeout=1)
 
                 if command_data["command"] == "quiz next video info":
-                    video_info = command_data["data"]["videoInfo"]["videoMap"]["catbox"]
-                    anime_html_ids = [video_info.get("0"), video_info.get("720"), video_info.get("480")]
-                    anime_order[index_dict] = anime_html_ids
-
-                    if answer_index in anime_order:
-                        anime_name = db.find_anime_by_id(anime_order[answer_index])
-
-                        if anime_name:
-                            answered = True
-                            del anime_order[answer_index]
-                            if not is_busy:
-                                is_busy = True
-                                answer(driver, anime_name)
-                            else:
-                                pending_answers.put(anime_name)
-
-                    index_dict += 1
+                    process_quiz_next_video_info(command_data, driver)
                     
                 elif command_data["command"] == "answer results":
                     if not answered:
@@ -196,9 +182,45 @@ def process_payloads(payload_queue, driver, stop_event):
                     
                     answered = False
                     answer_index += 1
-                    
+
         except queue.Empty:
             continue
+        except Exception as e:
+            if "Unread result found" in str(e):
+                print(f"Warning: {e}, skipping...")
+                del anime_order[answer_index]
+                index_dict += 1
+                answered = False
+                answer_index += 1
+                continue
+
+            print(f"Error processing payloads: {e}")
+
+def process_quiz_next_video_info(command_data, driver):
+    """Processes the 'quiz next video info' command data."""
+    global index_dict, is_busy, answer_index, answered, anime_dict, anime_order
+
+    try:
+        video_info = command_data["data"]["videoInfo"]["videoMap"]["catbox"]
+        anime_html_ids = [video_info.get("0"), video_info.get("720"), video_info.get("480")]
+        anime_order[index_dict] = anime_html_ids
+
+        if answer_index in anime_order:
+            anime_name = db.find_anime_by_id(anime_order[answer_index])
+
+            if anime_name:
+                answered = True
+                del anime_order[answer_index]
+                if not is_busy:
+                    is_busy = True
+                    answer(driver, anime_name)
+                else:
+                    pending_answers.put(anime_name)
+
+        index_dict += 1
+        
+    except Exception as e:
+        print(f"Error processing 'quiz next video info': {e}")
 
 def process_answer_results(command_data, anime_order):
     """Processes the 'answer results' command."""
@@ -221,13 +243,6 @@ def process_answer_results(command_data, anime_order):
 
     except Exception as e:
         print(f"Error processing 'answer results': {e}")
-
-def monitor_network(driver: webdriver.Chrome):
-    """Monitors network requests and captures anime opening requests."""
-    payload_queue = Queue()
-    threading.Thread(target=capture_payloads, args=(driver, payload_queue)).start()
-    threading.Thread(target=process_next_answer, args=(driver,)).start()
-    process_payloads(payload_queue, driver)
 
 
 def process_next_answer(driver, stop_event):
@@ -253,31 +268,42 @@ def answer(driver: webdriver.Chrome, ans: str) -> None:
         box.send_keys(ans)
         box.send_keys(Keys.RETURN)
     
-    except TimeoutException:
-        print("Timeout: the element did not become interactable in time.")
+    except (TimeoutException, ElementNotInteractableException):
+        print(f"Timeout or element not found: {e}. Retrying...")
+        time.sleep(0.5)
         answer(driver, ans)
-    
-    except ElementNotInteractableException:
-        print("Error: element found, but not interactable at the moment.")
+
+    except Exception as e:
+        print(f"Error during answering: {e}")
 
     finally:
         is_busy = False
 
 def is_start_button_clickable(driver):
     """Checks if the 'lbStartButton' is clickable and tries to click it."""
+    global index_dict, is_busy, answer_index, answered, anime_dict, anime_order
     try:
         # Espera até que o botão esteja presente, visível e clicável
         button = driver.find_element(By.ID, "lbStartButton")
 
         if button.is_displayed() and button.is_enabled():
+            reset_game_state()
             button.click()  # Clica no botão
             return True  # Retorna True se o botão foi clicado com sucesso
         else:
             return False
 
-    except NoSuchElementException:
-        return False
-    except TimeoutException:
+    except (NoSuchElementException, TimeoutException):
         return False
     except Exception as e:
         return False
+    
+def reset_game_state():
+    global index_dict, answer_index, is_busy, answered, anime_order, pending_answers
+    index_dict = 0
+    answer_index = 0
+    is_busy = False
+    answered = False
+    anime_order.clear()
+    while not pending_answers.empty():
+        pending_answers.get()
