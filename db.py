@@ -77,7 +77,7 @@ def create_database() -> None:
         conn.close() # Close the database connection
 
 def find_anime_by_id(
-    anime_html_ids: list
+    anime_html_id: str
 ) -> Optional[str]:
     """Finds an anime name based on its HTML IDs."""
 
@@ -86,23 +86,21 @@ def find_anime_by_id(
     cursor.execute("USE anime_db")
 
     try:
-        # Loop through each anime HTML ID provided
-        for anime_html_id in anime_html_ids:
-            # Execute a query to find the anime name associated with the given HTML ID
-            cursor.execute("""
-                SELECT a.nome 
-                FROM anime_ids ai 
-                JOIN animes a ON ai.anime_id = a.id 
-                WHERE ai.anime_html_id = %s
-            """, (anime_html_id,))
+        # Execute a query to find the anime name associated with the given HTML ID
+        cursor.execute("""
+            SELECT a.nome 
+            FROM anime_ids ai 
+            JOIN animes a ON ai.anime_id = a.id 
+            WHERE ai.anime_html_id = %s
+        """, (anime_html_id,))
 
-            result = cursor.fetchone() # Fetch the first matching result
-            if result: # If a result is found
-                anime_name = result[0]
-                print(f"\nFound anime: {anime_name} for ID: {anime_html_id}\n")
-                return anime_name # Return the found anime name
-            else:
-                return # Return None if no result is found
+        result = cursor.fetchone() # Fetch the first matching result
+        if result: # If a result is found
+            anime_name = result[0]
+            print(f"\nFound anime: {anime_name} for ID: {anime_html_id}\n")
+            return anime_name # Return the found anime name
+        else:
+            return # Return None if no result is found
 
     except Exception as e:
         print(f"Error searching for IDs in the database: {e}")
@@ -133,7 +131,7 @@ def find_anime_by_name(
         return None
 
 def save_anime(
-    anime_html_ids: list, 
+    anime_html_id: str, 
     anime_name: str
 ) -> None:
     """Saves an anime name and its associated HTML IDs in the database."""
@@ -152,16 +150,15 @@ def save_anime(
             print(f"Anime '{anime_name}' saved with ID: {anime_id}")
 
         print("Saving anime ids...")
-        for anime_html_id in anime_html_ids: # Loop through each HTML ID
-            if anime_html_id: # Check if the HTML ID is not empty
-                cursor.execute(
-                    "INSERT INTO anime_ids (anime_id, anime_html_id) VALUES (%s, %s)",
-                    (anime_id, anime_html_id)
-                ) # Insert the anime ID and HTML ID
+        if anime_html_id: # Check if the HTML ID is not empty
+            cursor.execute(
+                "INSERT INTO anime_ids (anime_id, anime_html_id) VALUES (%s, %s)",
+                (anime_id, anime_html_id)
+            ) # Insert the anime ID and HTML ID
 
         conn.commit()
         print("Saved successfully!")
-        print("Anime:", anime_name, " IDs:", anime_html_ids)
+        print("Anime:", anime_name, " IDs:", anime_html_id)
 
     except Exception as e:
         print(f"Error saving name or IDs to the database: {e}")
