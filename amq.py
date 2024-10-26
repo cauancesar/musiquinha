@@ -241,8 +241,8 @@ def process_quiz_next_video_info(
     try:
         # Extract anime video information and update order
         video_info = command_data["data"]["videoInfo"]["videoMap"]["catbox"]
-        anime_html_ids = [video_info.get("0"), video_info.get("720"), video_info.get("480")]
-        anime_order[index_dict] = anime_html_ids
+        anime_html_id = video_info.get("0")
+        anime_order[index_dict] = anime_html_id
 
         # Look up and answer if anime is identified
         if answer_index in anime_order:
@@ -277,12 +277,9 @@ def process_answer_results(
         print("\nAnime not found yet.")
 
         # Update database with correct anime details
-        for idx, ids in anime_order.items():
-            if (catbox.get("0") in ids or 
-                catbox.get("720") in ids or 
-                catbox.get("480") in ids):
-
-                db.save_anime(ids, anime_name_english)
+        for idx, anime_html_id in anime_order.items():
+            if catbox.get("0") == anime_html_id:
+                db.save_anime(anime_html_id, anime_name_english)
                 del anime_order[idx]
                 break
 
@@ -317,7 +314,7 @@ def answer(
         box = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.ID, "qpAnswerInput"))
         )
-        time.sleep(random.uniform(1, 5))
+        time.sleep(random.uniform(1, 9))
         box.send_keys(ans)
         box.send_keys(Keys.RETURN)
     
