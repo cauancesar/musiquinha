@@ -41,7 +41,7 @@ def create_database():
         """
         CREATE TABLE IF NOT EXISTS animes (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            nome VARCHAR(255) NOT NULL
+            nome VARCHAR(255) NOT NULL UNIQUE
         )
         """
         )
@@ -51,7 +51,7 @@ def create_database():
         CREATE TABLE IF NOT EXISTS anime_ids (
             id INT AUTO_INCREMENT PRIMARY KEY,
             anime_id INT,
-            anime_html_id VARCHAR(255) NOT NULL,
+            anime_html_id VARCHAR(255) NOT NULL UNIQUE,
             FOREIGN KEY (anime_id) REFERENCES animes(id) ON DELETE CASCADE
         )
         """
